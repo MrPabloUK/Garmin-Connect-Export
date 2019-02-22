@@ -7,7 +7,7 @@ function GarminImport() {
     var username = 'USERNAME'                     // Enter username used to login, not the full email. For example JoeBloggs, not JoeBloggs@gmail.com 
     var password = 'PASSWORD'                     // Enter password
 
-    var startingdate = '2018-03-13'               // Define starting date of data export (YYYY-MM-DD)
+    var startingdate = '2019-01-01'               // Define starting date of data export (YYYY-MM-DD)
     
     var foldername = 'Quantified Self';           // Google drive folder where data will be saved
     var spreadsheetname = 'Garmin Connect Data';  // Name of Google sheet file where data will be saved
