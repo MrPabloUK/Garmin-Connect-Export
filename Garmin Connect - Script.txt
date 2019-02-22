@@ -1,0 +1,331 @@
+function GarminImport() {
+
+    //////////////////////////////////////////////////////////////////////
+    /////// Enter login details, plus define start date, etc. ////////////
+    //////////////////////////////////////////////////////////////////////
+
+    var username = 'USERNAME'                     // Enter username used to login, not the full email. For example JoeBloggs, not JoeBloggs@gmail.com 
+    var password = 'PASSWORD'                     // Enter password
+
+    var startingdate = '2018-03-13'               // Define starting date of data export (YYYY-MM-DD)
+    
+    var foldername = 'Quantified Self';           // Google drive folder where data will be saved
+    var spreadsheetname = 'Garmin Connect Data';  // Name of Google sheet file where data will be saved
+
+    /////////////////////////////////////////////////////////////////////
+
+    // Define data endpoints for querying later /////////////////////////
+
+    var endingdate = Utilities.formatDate(new Date(Date.now() + 1000 * 60 * 60 * 24), 'GMT', 'yyyy-MM-dd');
+
+    var wellnessdata = 'https://connect.garmin.com/modern/proxy/userstats-service/wellness/daily/' + username + '?fromDate=' + startingdate + '&untilDate=' + endingdate
+    // var activities = 'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities?start=%s&limit=%s'
+    // var dailysummary = 'https://connect.garmin.com/modern/proxy/wellness-service/wellness/dailySummaryChart/%s?date=%s'
+
+    // Define the urls needed to login and query data ///////////////////
+
+    var base_url = 'https://connect.garmin.com/en-US/signin'
+    var login_url = 'https://sso.garmin.com/sso/login?'
+    var gauth = 'https://connect.garmin.com/modern/auth/hostname'
+    var sso = 'https://sso.garmin.com/sso'
+    var css = 'https://static.garmincdn.com/com.garmin.connect/ui/css/gauth-custom-v1.2-min.css'
+    var redirect = 'https://connect.garmin.com/modern/'
+    var host_connect_url = 'https://connect.garmin.com/'
+    var privacy_url = '//connect.garmin.com/en-US/privacy/'
+
+    // Define google sheet worksheet name(s) and data headers ///////////
+
+    var sheet = 'Wellness Data'
+    var data_headers = [
+        ['Metric',
+            'Date',
+            'Value',
+        ]
+    ];
+
+    ///////// Begin login process - four stages required ////////////////
+
+    ///////// First login fetches hostname for the second stage /////////
+
+    var firstcontact = UrlFetchApp.fetch(gauth);
+    var json = firstcontact.getContentText();
+    var hostname = JSON.parse(json).host;
+
+    //////// Second stage takes the acquired hostname, builds a long http address, finished with a submission of form data /////////////
+
+    // Build an array of the many variables to be encoded in the request url  //////////
+    var logindata = {
+        'service': redirect,
+        //'webhost': hostname,
+        //'source': base_url,
+        //'redirectAfterAccountLoginUrl': redirect,
+        //'redirectAfterAccountCreationUrl': redirect,
+        'gauthHost': sso,
+        //'locale': 'en_US',
+        //'id': 'gauth-widget',
+        //'cssUrl': css,
+        //'privacyStatementUrl' : privacy_url,
+        'clientId': 'GarminConnect',
+        //'rememberMeShown': 'true',
+        //'rememberMeChecked': 'false',
+        //'createAccountShown': 'true',
+        //'openCreateAccount': 'false',
+        //'usernameShown': 'false',
+        'consumeServiceTicket': 'false',
+        //'initialFocus': 'true',
+        //'embedWidget': 'false',
+        //'generateExtraServiceTicket': 'false',
+        //'generateTwoExtraServiceTickets':'false',
+        //'generateNoServiceTicket':'false',
+        //'globalOptInShown':'true',
+        //'globalOptInChecked':'false',
+        //'mobile':'false',
+        //'connectLegalTerms':'true',
+        //'locationPromptShown':'true',
+        //'showPassword':'true',
+    };
+
+    // Build the data to be submitted to the login form, specifying the actual form required //////////
+    var formdata = {
+        'id': 'login-form',
+        'username': username,
+        'password': password,
+        'embed': 'true',
+        '_eventId': 'submit',
+        'rememberme': 'on',
+    };
+
+    // Define the options for the url fetch, including embedding form data as payload ///////
+    var options = {
+        'method': 'post',
+        'followRedirects': false,
+        'payload': formdata
+    };
+
+    // Now for the second stage of login, combine the base url with generated url (using custom function 'param' //////
+    var initial_login = UrlFetchApp.fetch(login_url + param(logindata), options);
+    var loginresponsecode = initial_login.getResponseCode();
+    var loginresponse = initial_login.getContentText();
+
+    // Check that we've successfully authenticated for the second stage ////// 
+    if (loginresponse.indexOf(' status 			= "FAIL"') > -1) {
+        Logger.log('Game over, initial login failed. Check credentials or review for changes to login process.');
+    } else {
+
+        // Successful authentication, now to extract the response url needed for the third stage of login /// 
+        var strstart = 'response_url                 	= "';
+        var cut = loginresponse.substring(loginresponse.indexOf(strstart), loginresponse.length);
+        var value = cut.substring(strstart.length, cut.indexOf('";'));
+        var response_url = value.replace(/\\\//g, "/");
+
+
+        //Build the options needed for the third stage, disabling any redirection as we need to extrac the session id cookie.///
+
+        options = {
+            'method': 'get',
+            'followRedirects': false,
+        };
+
+        var second_login = UrlFetchApp.fetch(response_url, options);
+        var second_loginresponsecode = second_login.getResponseCode();
+
+        if (second_loginresponsecode == 200) {
+            Logger.log('Check the reponse url is being fetched correctly');
+            // Incorrect response url
+        } else if (second_loginresponsecode == 302) {
+
+            // Third stage authentication successful, now to extract the cookies needed for the final stage of login ///////
+
+            var headers = second_login.getAllHeaders();
+            if (typeof headers['Set-Cookie'] !== 'undefined') {
+                // Make sure that we are working with an array of cookies
+                var cookies = typeof headers['Set-Cookie'] == 'string' ? [headers['Set-Cookie']] : headers['Set-Cookie'];
+                for (var i = 0; i < cookies.length; i++) {
+                    // We only need the cookie's value - it might have path, expiry time, etc here
+                    cookies[i] = cookies[i].split(';')[0];
+                }
+            }
+
+            // Final stage, now to connect to garmin connect using the stored cookies ////////
+
+            options = {
+                'headers': {
+                    'Cookie': cookies.join(';')
+                }
+            };
+
+            var final_login = UrlFetchApp.fetch(redirect, options);
+            var final_loginresponsecode = final_login.getResponseCode();
+            var final_loginresponsecontent = final_login.getContentText();
+
+            // Check that we're actually signed in and that Garmin haven't changed something else yet again /////
+
+            if (final_loginresponsecontent.indexOf("logged_in") > -1) {
+                Logger.log('Uh oh. Something has broken between gathering cookies and completing login. Check the cookies are being collected correctly, or if the final url is changed');
+            } else {
+                // In theory, we're in and ready to extract the data ////
+
+
+
+
+                //////////// Start Extract Process //////////  
+
+
+                var query_url = UrlFetchApp.fetch(wellnessdata, options);
+                var query_response = query_url.getContentText();
+                // Parse JSON data
+                var query_data = JSON.parse(query_response);
+                var query_json = query_data.allMetrics.metricsMap
+
+
+                var metric_type_key = Object.keys(query_json);
+                var metric_type_count = metric_type_key.length;
+
+                if (metric_type_count == 0) {
+                    Logger.log('No data');
+                    return;
+                }
+
+
+
+                var metric_value_array = [];
+
+                for (var i = 0; i < metric_type_count; i++) {
+                    var metric_datapoint_count = Object.keys(query_json[metric_type_key[i]]).length;
+                    for (var m = 0; m < metric_datapoint_count; m++) {
+                        var item = [metric_type_key[i],
+                            query_json[metric_type_key[i]][m].calendarDate,
+                            query_json[metric_type_key[i]][m].value,
+                        ];
+
+                        metric_value_array.push(item);
+                    }
+                }
+
+
+                // Data extracted and pushed into array, now to load into google sheets ////////
+                                    
+                
+                var googlesheet = Find_or_create_target_spreadsheet(spreadsheetname,foldername,sheet);                    
+
+                var opensheet = SpreadsheetApp.openById(googlesheet);
+                var targetsheet = opensheet.getSheetByName(sheet);
+                if (!targetsheet) {
+                    opensheet.insertSheet(sheet);
+                };
+
+                var targetsheet = opensheet.getSheetByName(sheet);
+
+                targetsheet.clear()
+
+                targetsheet.getRange(1, 1, 1, data_headers[0].length).setValues(data_headers)
+                targetsheet.getRange(2, 1, metric_value_array.length, metric_value_array[0].length).setValues(metric_value_array);
+                
+                var initialsheet = opensheet.getSheetByName('Sheet1').hideSheet();
+
+
+            }
+        }
+    }
+}
+
+
+
+
+//////////////////////////////////////////////////////
+/////////////// Custom functions /////////////////////
+//////////////////////////////////////////////////////
+
+function param(object) {
+    var parameters = [];
+    for (var property in object) {
+        if (object.hasOwnProperty(property)) {
+            parameters.push(encodeURI(property + '=' + object[property]));
+        }
+    }
+
+    return parameters.join('&');
+}
+
+
+
+function Check_folder_and_file_exist(filename, foldername) {
+
+    var folders = DriveApp.getFoldersByName(foldername);
+
+    //Folder does not exist
+    if (!folders.hasNext()) {
+        Logger.log("No Folder Found");
+        return [0, '', '']
+
+    }
+    //Folder does exist
+    else {
+
+        while (folders.hasNext()) {
+            var folder = folders.next();
+            if (foldername == folder.getName()) {
+                var folderId = folder.getId();
+            }
+        }
+
+        Logger.log("Folder Found - " + folderId);
+        var file = folder.getFilesByName(filename);
+
+        if (!file.hasNext()) {
+
+            return [1, folderId, ''];
+        } else {
+            var fileId = file.next().getId();
+            Logger.log("File Found - " + fileId);
+            return [2, folderId, fileId];
+        }
+    }
+}
+
+
+
+
+function Move_file_to_folder(fileID, targetFolderID) {
+
+    var file = DriveApp.getFileById(fileID);
+
+    // Remove the file from all parent folders
+    var parents = file.getParents();
+    while (parents.hasNext()) {
+        var parent = parents.next();
+        parent.removeFile(file);
+    }
+    DriveApp.getFolderById(targetFolderID).addFile(file);
+}
+
+
+
+
+function Find_or_create_target_spreadsheet(spreadsheetname, foldername, sheetname) {
+
+    var targetfileId, folder, file, targetfolderId;
+
+    var result = Check_folder_and_file_exist(spreadsheetname, foldername);
+    Logger.log(result);
+
+    if (result[0] == 0) {
+        folder = DriveApp.createFolder(foldername);
+        targetfolderId = folder.getId();
+        file = SpreadsheetApp.create(spreadsheetname);
+        targetfileId = file.getId();
+        Move_file_to_folder(targetfileId, targetfolderId);
+        Logger.log('Folder and file created, ID is - ' + targetfileId);
+
+    } else if (result[0] == 1) {
+        file = SpreadsheetApp.create(spreadsheetname);
+        targetfileId = file.getId();
+        targetfolderId = result[1];
+        Move_file_to_folder(targetfileId, targetfolderId);
+        Logger.log('File created, ID is - ' + targetfileId);
+
+    } else {
+        targetfileId = result[2];
+    }
+    return targetfileId;
+}
