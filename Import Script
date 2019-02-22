@@ -16,7 +16,7 @@ function GarminImport() {
 
     // Define data endpoints for querying later /////////////////////////
 
-   var endingdate = Utilities.formatDate new Date(Date.now(), 'GMT', 'yyyy-MM-dd');
+   var endingdate = Utilities.formatDate (new Date(Date.now()), 'GMT', 'yyyy-MM-dd');
 
     var wellnessdata = 'https://connect.garmin.com/modern/proxy/userstats-service/wellness/daily/' + username + '?fromDate=' + startingdate + '&untilDate=' + endingdate
     // var activities = 'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities?start=%s&limit=%s'
