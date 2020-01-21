@@ -4,10 +4,10 @@ function GarminImport() {
     /////// Enter login details, plus define start date, etc. ////////////
     //////////////////////////////////////////////////////////////////////
 
-    var username = 'USERNAME'                     // Enter username used to login, not the full email. For example JoeBloggs, not JoeBloggs@gmail.com 
-    var password = 'PASSWORD'                     // Enter password
+    var username = 'USERNAME'                    // Enter username used to login, not the full email. For example JoeBloggs, not JoeBloggs@gmail.com 
+    var password = 'PASSWORD!'                   // Enter password
 
-    var startingdate = '2019-01-01'               // Define starting date of data export (YYYY-MM-DD)
+    var startingdate = '2018-03-13'              // Define starting date of data export (YYYY-MM-DD)
     
     var foldername = 'Quantified Self';           // Google drive folder where data will be saved
     var spreadsheetname = 'Garmin Connect Data';  // Name of Google sheet file where data will be saved
@@ -16,32 +16,38 @@ function GarminImport() {
 
     // Define data endpoints for querying later /////////////////////////
 
-   var endingdate = Utilities.formatDate (new Date(Date.now()), 'GMT', 'yyyy-MM-dd');
+    var endingdate = Utilities.formatDate (new Date(Date.now()), 'GMT', 'yyyy-MM-dd');
 
     var wellnessdata = 'https://connect.garmin.com/modern/proxy/userstats-service/wellness/daily/' + username + '?fromDate=' + startingdate + '&untilDate=' + endingdate
-    // var activities = 'https://connect.garmin.com/modern/proxy/activitylist-service/activities/search/activities?start=%s&limit=%s'
-    // var dailysummary = 'https://connect.garmin.com/modern/proxy/wellness-service/wellness/dailySummaryChart/%s?date=%s'
+    var dailysummary = 'https://connect.garmin.com/modern/proxy/usersummary-service/usersummary/list/' + username + '?start=1&limit=366&maxDate='
 
     // Define the urls needed to login and query data ///////////////////
 
     var base_url = 'https://connect.garmin.com/en-US/signin'
-    var login_url = 'https://sso.garmin.com/sso/login?'
+    var login_url = 'https://sso.garmin.com/sso/signin?'
     var gauth = 'https://connect.garmin.com/modern/auth/hostname'
     var sso = 'https://sso.garmin.com/sso'
-    var css = 'https://static.garmincdn.com/com.garmin.connect/ui/css/gauth-custom-v1.2-min.css'
+    var origin = 'sso.garmin.com'
+    var css = 'https://connect.garmin.com/gauth-custom-v1.2-min.css'
     var redirect = 'https://connect.garmin.com/modern/'
     var host_connect_url = 'https://connect.garmin.com/'
-    var privacy_url = '//connect.garmin.com/en-US/privacy/'
+    var privacy_url = 'https://www.garmin.com/en-US/privacy/connect/'
+    var source = 'https://connect.garmin.com/en-US/signin'
+    var profile_url = 'https://connect.garmin.com/modern/proxy/userprofile-service/socialProfile/'
+    var source = 'https://connect.garmin.com/signin/'
 
     // Define google sheet worksheet name(s) and data headers ///////////
 
-    var sheet = 'Wellness Data'
-    var data_headers = [
+    var sheet_wellness = 'Wellness Data'
+    var data_headers_wellness = [
         ['Metric',
             'Date',
             'Value',
         ]
     ];
+      
+     
+    var sheet_daily_summary = 'Daily Summary Data'      
 
     ///////// Begin login process - four stages required ////////////////
 
@@ -56,56 +62,74 @@ function GarminImport() {
     // Build an array of the many variables to be encoded in the request url  //////////
     var logindata = {
         'service': redirect,
-        //'webhost': hostname,
-        //'source': base_url,
-        //'redirectAfterAccountLoginUrl': redirect,
-        //'redirectAfterAccountCreationUrl': redirect,
+        'webhost': redirect,
+        'source': base_url,
+        'redirectAfterAccountLoginUrl': redirect,
+        'redirectAfterAccountCreationUrl': redirect,
         'gauthHost': sso,
-        //'locale': 'en_US',
-        //'id': 'gauth-widget',
-        //'cssUrl': css,
-        //'privacyStatementUrl' : privacy_url,
+        'locale': 'en_US',
+        'id': 'gauth-widget',
+        'cssUrl': css,
+        'privacyStatementUrl' : privacy_url,
         'clientId': 'GarminConnect',
-        //'rememberMeShown': 'true',
-        //'rememberMeChecked': 'false',
-        //'createAccountShown': 'true',
-        //'openCreateAccount': 'false',
-        //'usernameShown': 'false',
+        'rememberMeShown': 'true',
+        'rememberMeChecked': 'false',
+        'createAccountShown': 'true',
+        'openCreateAccount': 'false',
+        'dsplayNameShown': 'false',
         'consumeServiceTicket': 'false',
-        //'initialFocus': 'true',
-        //'embedWidget': 'false',
-        //'generateExtraServiceTicket': 'false',
-        //'generateTwoExtraServiceTickets':'false',
-        //'generateNoServiceTicket':'false',
-        //'globalOptInShown':'true',
-        //'globalOptInChecked':'false',
-        //'mobile':'false',
-        //'connectLegalTerms':'true',
-        //'locationPromptShown':'true',
-        //'showPassword':'true',
+        'initialFocus': 'true',
+        'embedWidget': 'false',
+        'generateExtraServiceTicket': 'true',
+        'generateTwoExtraServiceTickets':'false',
+        'generateNoServiceTicket':'false',
+        'globalOptInShown':'true',
+        'globalOptInChecked':'false',
+        'mobile':'false',
+        'connectLegalTerms':'true',
+        'locationPromptShown':'true',
+        'showPassword':'true',
+        'source': source
     };
+      
+    // Now to connect and extract the CSRF token for use in the login form ///////
+    var csrf_login = UrlFetchApp.fetch(login_url + param(logindata));
+    var csrf_responsecode = csrf_login.getResponseCode();
+    var csrf_response = csrf_login.getContentText();
+    
+    var csrf_token = csrf_response.slice(csrf_response.search('<input type="hidden" name="_csrf" value="')+41,csrf_response.search('<input type="hidden" name="_csrf" value="')+141);
+     
 
     // Build the data to be submitted to the login form, specifying the actual form required //////////
     var formdata = {
         'id': 'login-form',
         'username': username,
         'password': password,
-        'embed': 'true',
-        '_eventId': 'submit',
-        'rememberme': 'on',
+        'embed': 'false',
+        '_csrf': csrf_token
     };
 
+    var header = {
+        //'Referer': 'https://sso.garmin.com/sso/signin?service=https%253A%252F%252Fconnect.garmin.com%252Fmodern%252F&webhost=https%253A%252F%252Fconnect.garmin.com%252Fmodern%252F&source=https%3A%2F%2Fconnect.garmin.com%2Fsignin%2F&redirectAfterAccountLoginUrl=https%253A%252F%252Fconnect.garmin.com%252Fmodern%252F&redirectAfterAccountCreationUrl=https%253A%252F%252Fconnect.garmin.com%252Fmodern%252F&gauthHost=https%3A%2F%2Fsso.garmin.com%2Fsso&locale=en_US&id=gauth-widget&cssUrl=https%3A%2F%2Fconnect.garmin.com%2Fgauth-custom-v1.2-min.css&privacyStatementUrl=https%3A%2F%2Fwww.garmin.com%2Fen-US%2Fprivacy%2Fconnect%2F&clientId=GarminConnect&rememberMeShown=true&rememberMeChecked=false&createAccountShown=true&openCreateAccount=false&displayNameShown=false&consumeServiceTicket=false&initialFocus=true&embedWidget=false&generateExtraServiceTicket=true&generateTwoExtraServiceTickets=false&generateNoServiceTicket=false&globalOptInShown=true&globalOptInChecked=false&mobile=false&connectLegalTerms=true&showTermsOfUse=false&showPrivacyPolicy=false&showConnectLegalAge=false&locationPromptShown=true&showPassword=true&useCustomHeader=false'
+      'Referer': login_url + param(logindata)
+      };
+      
+     
     // Define the options for the url fetch, including embedding form data as payload ///////
     var options = {
         'method': 'post',
+        'headers' : header,
+        'Origin': origin,
         'followRedirects': false,
         'payload': formdata
     };
+ 
 
     // Now for the second stage of login, combine the base url with generated url (using custom function 'param' //////
     var initial_login = UrlFetchApp.fetch(login_url + param(logindata), options);
     var loginresponsecode = initial_login.getResponseCode();
     var loginresponse = initial_login.getContentText();
+
 
     // Check that we've successfully authenticated for the second stage ////// 
     if (loginresponse.indexOf(' status 			= "FAIL"') > -1) {
@@ -117,14 +141,30 @@ function GarminImport() {
         var cut = loginresponse.substring(loginresponse.indexOf(strstart), loginresponse.length);
         var value = cut.substring(strstart.length, cut.indexOf('";'));
         var response_url = value.replace(/\\\//g, "/");
+      
+      Logger.log(response_url);
+      
+                  var headers = initial_login.getAllHeaders();
+            if (typeof headers['Set-Cookie'] !== 'undefined') {
+                // Make sure that we are working with an array of cookies
+                var cookies = typeof headers['Set-Cookie'] == 'string' ? [headers['Set-Cookie']] : headers['Set-Cookie'];
+                for (var i = 0; i < cookies.length; i++) {
+                    // We only need the cookie's value - it might have path, expiry time, etc here
+                    cookies[i] = cookies[i].split(';')[0];
+                }
+            }
+      
 
 
-        //Build the options needed for the third stage, disabling any redirection as we need to extrac the session id cookie.///
+        //Build the options needed for the third stage, disabling any redirection as we need to extract the session id cookie.///
 
         options = {
             'method': 'get',
             'followRedirects': false,
+            'Cookie': cookies.join(';'),
+            'headers' : header,
         };
+  
 
         var second_login = UrlFetchApp.fetch(response_url, options);
         var second_loginresponsecode = second_login.getResponseCode();
@@ -145,18 +185,21 @@ function GarminImport() {
                     cookies[i] = cookies[i].split(';')[0];
                 }
             }
-
+ 
             // Final stage, now to connect to garmin connect using the stored cookies ////////
 
             options = {
+                'origin': origin,
                 'headers': {
-                    'Cookie': cookies.join(';')
+                    'Cookie': cookies.join(';'),
                 }
             };
 
             var final_login = UrlFetchApp.fetch(redirect, options);
             var final_loginresponsecode = final_login.getResponseCode();
+  
             var final_loginresponsecontent = final_login.getContentText();
+
 
             // Check that we're actually signed in and that Garmin haven't changed something else yet again /////
 
@@ -171,8 +214,9 @@ function GarminImport() {
                 //////////// Start Extract Process //////////  
 
 
-                var query_url = UrlFetchApp.fetch(wellnessdata, options);
+                var query_url = UrlFetchApp.fetch(wellnessdata, options);              
                 var query_response = query_url.getContentText();
+              
                 // Parse JSON data
                 var query_data = JSON.parse(query_response);
                 var query_json = query_data.allMetrics.metricsMap
@@ -206,20 +250,93 @@ function GarminImport() {
                 // Data extracted and pushed into array, now to load into google sheets ////////
                                     
                 
-                var googlesheet = Find_or_create_target_spreadsheet(spreadsheetname,foldername,sheet);                    
+                var googlesheet = Find_or_create_target_spreadsheet(spreadsheetname,foldername,sheet_wellness);                    
 
                 var opensheet = SpreadsheetApp.openById(googlesheet);
-                var targetsheet = opensheet.getSheetByName(sheet);
+                var targetsheet = opensheet.getSheetByName(sheet_wellness);
                 if (!targetsheet) {
-                    opensheet.insertSheet(sheet);
+                    opensheet.insertSheet(sheet_wellness);
                 };
 
-                var targetsheet = opensheet.getSheetByName(sheet);
+                var targetsheet = opensheet.getSheetByName(sheet_wellness);
 
                 targetsheet.clear()
 
-                targetsheet.getRange(1, 1, 1, data_headers[0].length).setValues(data_headers)
+                targetsheet.getRange(1, 1, 1, data_headers_wellness[0].length).setValues(data_headers_wellness)
                 targetsheet.getRange(2, 1, metric_value_array.length, metric_value_array[0].length).setValues(metric_value_array);
+                      
+                      
+                      
+                      
+                      
+                // Daily summary data  ////      
+
+
+var testdate = Date.parse('2018-03-13'); 
+                      Logger.log(testdate);
+
+                      
+                      
+                var query_url = UrlFetchApp.fetch(dailysummary + endingdate, options);
+                var query_response = query_url.getContentText();
+              
+                // Parse JSON data
+                var query_data = JSON.parse(query_response);
+                var query_json = query_data
+
+                var datapoint_key = Object.keys(query_json);
+                var datapoint_count = datapoint_key.length;
+
+                var metric_type_key = Object.keys(query_json[0]);
+                var metric_type_count = metric_type_key.length;
+
+                if (metric_type_count == 0) {
+                    Logger.log('No data');
+                    return;
+                }
+
+        
+                var header_array = [];
+                header_array.push(Object.keys(query_json[0]));               
+
+                var metric_value_array = [];
+
+                for (var i = 0; i < datapoint_count; i++) {
+                    var metric_value_sub_array = [];
+                    var metric_datapoint_count = Object.keys(query_json[i]).length;
+                    for (var m = 0; m < metric_datapoint_count; m++) {
+                        var ref = Object.keys(query_json[i])[m]
+                        var item = query_json[i][ref];
+                        metric_value_sub_array.push(item);
+                    }
+                  metric_value_array[i]=metric_value_sub_array;
+                }
+
+
+                // Data extracted and pushed into array, now to load into google sheets ////////
+                                    
+                
+                var googlesheet = Find_or_create_target_spreadsheet(spreadsheetname,foldername,sheet_daily_summary);                    
+
+                var opensheet = SpreadsheetApp.openById(googlesheet);
+                var targetsheet = opensheet.getSheetByName(sheet_daily_summary);
+                if (!targetsheet) {
+                    opensheet.insertSheet(sheet_daily_summary);
+                };
+
+                var targetsheet = opensheet.getSheetByName(sheet_daily_summary);
+
+                targetsheet.clear()
+
+                targetsheet.getRange(1, 1, 1, header_array[0].length).setValues(header_array)
+                targetsheet.getRange(2, 1, metric_value_array.length, metric_value_array[0].length).setValues(metric_value_array);
+                      
+                      
+                      
+                      
+                
+                      
+                      
                 
                 var initialsheet = opensheet.getSheetByName('Sheet1').hideSheet();
 
